@@ -26,7 +26,8 @@ def iterate_calendar(start_date:str,
     trans = False
     global creator
     creator = {} #this dictionary will hold all our instances of date Holdings with the datetime as key and the holding object as value
-
+    global valuations
+    valuations = {} # k datetime and v port valuation   
 
     transactions = transactions.sort_values(by='Date', ascending=True) #should already be in order but just in case
 
@@ -56,7 +57,7 @@ def iterate_calendar(start_date:str,
                                              transaction = trans,
                                              pricing_df= stored_valuation)
             creator[current_date].priceit()
-            valuations[current_date] = creator[current_date].valuation 
+            valuations[str(current_date)] = creator[current_date].valuation 
             
             _prev_holdings = creator[current_date].holdings  #initialisation of _prev holdings var
 
@@ -67,7 +68,7 @@ def iterate_calendar(start_date:str,
                                              transaction = trans,
                                              pricing_df= stored_valuation)
             creator[current_date].priceit()
-            valuations[current_date] = creator[current_date].valuation 
+            valuations[str(current_date)] = creator[current_date].valuation 
 
         if trans:
             #adjust the holdings the day there is a transaction and overwrites the data to be used for the next day
@@ -75,16 +76,20 @@ def iterate_calendar(start_date:str,
             creator[current_date].transaction_df = transactions[transactions["Date"] == str(current_date)] #passing the transactions for that date
             creator[current_date].adjustments() #adjusting the holdings
             creator[current_date].priceit() #repricing    
-            valuations[current_date] = creator[current_date].valuation #writing our valuation to our dictionary
+            valuations[str(current_date)] = creator[current_date].valuation #writing our valuation to our dictionary
             #once the instance.holdings have been modified they will be the holdings of the next instance
             _prev_holdings = creator[current_date].holdings
             trans = False 
            
         #to be executed always    
         current_date = current_date + timedelta(days = 1)
+    
+    df = pd.DataFrame.from_dict(valuations, orient="index")
+    return df.dropna()
 
 
 class Holdings():
+
     
     '''This class modules the instance of a holding in any given date'''
     
@@ -123,7 +128,7 @@ class Holdings():
 
         
         #overwritting adjusting cash position  and holdings again
-        working_df_holdings.loc[working_df_holdings["Ticker"] == "EUR", "Quantity"] = float(working_df_holdings.loc[working_df_holdings["Ticker"] == "EUR", "Quantity"]) + float(delta_cash) #currently cash is hardcoded in
+        working_df_holdings.loc[working_df_holdings["Ticker"] == "EUR", "Quantity"] = float(working_df_holdings.loc[working_df_holdings["Ticker"] == "EUR", "Quantity"]) + float(delta_cash) #currently EUR cash is hardcoded in
         self.holdings = working_df_holdings
         print(self.holdings)
     
@@ -162,7 +167,13 @@ class Holdings():
                 self.valuation = working_holdings_df["Total"].sum()
             except:
                 self.valuation = np.nan 
-
-        print(working_holdings_df)
         print(self.valuation)
         self.holdings = working_holdings_df
+
+
+
+df = iterate_calendar("2023-01-01", "2023-01-31", df, df2)
+df = df.dropna()
+df.plot()
+plt.show()
+
