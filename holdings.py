@@ -1,4 +1,4 @@
-''' The purpose of this Module is to create an modele an object that has the holdings of a portfolio as well as other important transaction information'''
+''' The purpose of this Module is to create an model an object that has the holdings of a portfolio as well as other important transaction information'''
 
 from datetime import datetime, timedelta
 import pandas as pd
@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 df = pd.read_csv("holdings.csv")
 df2 = pd.read_csv("transactions.csv")
 
-valuations = {} # k datetime and v port valuation 
+valuations = {} # k datetime and v portfolio valuation 
 
 def iterate_calendar(start_date:str, 
                      end_date:str, 
@@ -91,9 +91,10 @@ def iterate_calendar(start_date:str,
 class Holdings():
 
     
-    '''This class modules the instance of a holding in any given date'''
+    '''This class models the instance of a holding in any given date'''
     
-    def __init__(self, holdings:pd.DataFrame, 
+    def __init__(self, 
+                 holdings:pd.DataFrame, 
                  date:datetime, 
                  transaction:bool,
                  pricing_df = pd.DataFrame(), 

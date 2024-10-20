@@ -24,13 +24,12 @@ def pricing_df(startdate:str,
 
     return df
 
-def mod_day(date_str, dif):
+def mod_day(date_str:str, dif):
     date_obj = datetime.strptime(date_str, "%Y-%m-%d")
 
     # Subtract one day using timedelta
-    new_date_obj = date_obj + timedelta(days=dif)
+    new_date_obj = date_obj + timedelta(days = dif)
     new_date_str = new_date_obj.strftime("%Y-%m-%d")
-
-    return(str(new_date_str))
+    return(str(new_date_str)) #should already be a string because .strftime method is applied to a datetime object to create a string
 
 
