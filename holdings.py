@@ -113,12 +113,12 @@ class Holdings():
         working_df_trans = self.transaction_df
         working_df_holdings = self.holdings
      
-        working_df_trans["total"] = working_df_trans["Quantity"] * working_df_trans["Price"]  
+        working_df_trans["total"] = working_df_trans["Quantity"] * working_df_trans["Price"]  #takes care of affect on cash
         delta_cash = working_df_trans["total"].sum()
 
     
         for row in working_df_trans.itertuples():
-    # Check if the Ticker exists in the holdings DataFrame
+        # Check if the Ticker exists in the holdings DataFrame
             if row.Ticker in working_df_holdings['Ticker'].values:
                 # If it exists, update the quantity
                 working_df_holdings.loc[working_df_holdings["Ticker"] == row.Ticker, "Quantity"] += row.Quantity

@@ -3,7 +3,8 @@ import pandas as pd
 import plotly.graph_objects as go
 import matplotlib.pyplot as plt
 from holdings import iterate_calendar
-
+from openpyxl import Workbook
+from io import BytesIO
 
 
 # Streamlit app
@@ -58,6 +59,43 @@ def create_plot(df):
     return fig
 
 
+def create_excel_file(file_name):
+    # Create a new Excel workbook and sheet using openpyxl
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Sheet1"  # Default sheet
+
+    # Save the workbook to a BytesIO object (in-memory file)
+    file_stream = BytesIO()
+    wb.save(file_stream)
+    file_stream.seek(0)  # Go back to the beginning of the file
+    
+    return file_stream
+
+# Streamlit app
+st.title("Excel File Generator")
+
+# Step 1: Get the filename from the user
+file_name = st.text_input("Enter the name for your Excel file (without extension):")
+
+# Step 2: Generate Excel file when user clicks the button
+if file_name:
+    # Add a download button to trigger the file download
+    excel_file = create_excel_file(file_name)
+
+    # Provide the download button
+    st.download_button(
+        label="Download Excel File",
+        data=excel_file,
+        file_name=f"{file_name}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    
+
+
+
+
+'''
 if __name__ == "__main__":
     main()
-
+'''
