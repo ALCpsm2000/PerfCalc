@@ -3,6 +3,16 @@ import numpy as np
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
+import logging
+
+
+logging.basicConfig(
+    level = logging.INFO,
+    format = "%(asctime)s - %(levelname)s - %(message)s",
+    handlers = [logging.FileHandler("app.log"), logging.StreamHandler()]
+)
+
+
 
 
 df_holdings = pd.read_csv("holdings.csv")
@@ -12,7 +22,7 @@ df_trans = pd.read_csv("transactions.csv")
 class TimeFrame:
     
     ''' Most abstract object'''
-
+    logging.info("We are initiating an instance of a TimeFrame")
     def __init__ (self, 
                   startday:str, 
                   endday:str
@@ -29,15 +39,16 @@ class TimeFrame:
         self.list_days_str = self._list_days(as_str = True)
         self.numdays = len(self.list_days_str)
 
-        #populated with portfolio data
+        #populated with portfolio data storage
         self.portfolios = list()
         self.transaction_date = dict()
-        self.transactions_df = dict() 
+        self.transactions_df_storage = dict() 
         self.init_holdings_port = dict()
         self.numport = 0
         self.IndividualDays_instances = dict() #generates a dictionary with all the individual days as keys and the object as values
 
     def _list_days(self, as_str:bool = False):
+        '''self explanatory'''
         days = []
         current_date = self.startday_dt
         
@@ -53,7 +64,7 @@ class TimeFrame:
         ''' To generate one individual portfolio without creating the instances but rather the metadata in TP class object'''
         self.portfolios.append(name)
         self.transaction_date[name] = transactions_df["Date"].tolist()
-        self.transactions_df[name] = transactions_df.copy(deep=True)
+        self.transactions_df_storage[name] = transactions_df.copy(deep=True)
         self.init_holdings_port[name] = holdings_df.copy(deep=True) 
         self.numport += 1
 
@@ -66,7 +77,7 @@ class TimeFrame:
                                             self.portfolios, 
                                             self.transaction_date, 
                                             self.init_holdings_port, 
-                                            self.transactions_df, 
+                                            self.transactions_df_storage, 
                                             is_start_day = _start_day_bool)
             self.IndividualDays_instances[day] = _temp_instance
 
@@ -99,16 +110,16 @@ class TimeFrame:
 
         plt.show()
 
-
-
             
 
 class IndividualDay(TimeFrame):
     ''' This object maps an individual day'''
-    def __init__(self, instance, day:str, portfolios:list, transaction_date:dict, init_holdings_port:dict, transactions_df:dict, is_start_day:bool):
+    def __init__(self, instance, day:str, portfolios:list, transaction_date:dict, init_holdings_port:dict, transactions_df_storage:dict, is_start_day:bool):
         
+        logging.info(f"We are generating an instance of an Individual day. The day is: {day}")
+
         self.day_str = day
-        self.parent_instance = instance
+        self.parent_instance = instance #TS objects
         self.day_dt = datetime.strptime(day, '%Y-%m-%d')
         self.is_start_day = is_start_day #bool that tells us if it is the first day of the portfolios
         
@@ -118,29 +129,28 @@ class IndividualDay(TimeFrame):
         self.num_portfolio = 0
         self.transaction_date = transaction_date
         self.init_holding_port = init_holdings_port
-        self.transaction_df = transactions_df
+        self.transactions_df_storage = transactions_df_storage
 
         self.portfolio_instances = dict()
         self.create_portfolio() #this should be executed last
+        
 
 
     def create_portfolio(self):
         ''' This creates an instance of a portfolio'''
         for port in self.portfolios_list:
             trans = True if self.day_str in self.transaction_date[port] else False #bool that tells us if it is a transaction date
-            is_SAA = True if ((self.transaction_df[port]['Date'] == self.day_str) & (self.transaction_df[port]['Ticker'] == "EUR")).any() else False
+            is_SAA = True if ((self.transactions_df_storage[port]['Date'] == self.day_str) & (self.transactions_df_storage[port]['Ticker'] == "EUR")).any() else False
             self.portfolio_instances[port] = Portfolio(self, #here we are passing the instance of ID to the portfolio so that it can work with it
                                                        self.parent_instance, #here we are passing the instance of the TS
                                                        port, 
                                                        val_day=self.day_str,
                                                        is_trans_day=trans,
                                                        init_holdings = self.init_holding_port[port],
-                                                       transactions = self.transaction_df[port],
+                                                       transactions_df = self.transactions_df_storage[port],
                                                        is_start_day = self.is_start_day,
                                                        is_SAA = is_SAA)
             self.num_portfolio += 1
-
-
 
 
 
@@ -150,7 +160,9 @@ class Portfolio(IndividualDay):
     
     ''' This modules a portfolio on a SPECIFIC day'''
     
-    def __init__(self, instance_ID, instance_TS, name:str, val_day:str, is_trans_day:bool, init_holdings:pd.DataFrame, transactions:pd.DataFrame, is_start_day:bool, is_SAA:bool = False):
+    def __init__(self, instance_ID, instance_TS, name:str, val_day:str, is_trans_day:bool, init_holdings:pd.DataFrame, transactions_df:pd.DataFrame, is_start_day:bool, is_SAA:bool = False):
+        
+        logging.info(f"We are generating a instance of a Portfolio for a specific day. The portfolio is: {name} for day: {val_day}")
         
         #admin
         self.name = name
@@ -160,188 +172,101 @@ class Portfolio(IndividualDay):
         self.val_day_dt = datetime.strptime(val_day, '%Y-%m-%d')
         self.prev_day_dt = self.val_day_dt - timedelta(days = 1)
         self.prev_day_str = self.prev_day_dt.strftime("%Y-%m-%d")
-        self.shares = 1000
+        self.tomorrow_dt = self.val_day_dt + timedelta(days = 1)
+        self.tomorrow_dt_str = self.tomorrow_dt.strftime("%Y-%m-%d")
+        self.shares = np.nan
         self.nav = np.nan
         self.is_SAA = is_SAA
-
-        #holdings
+        self.is_TAA = is_trans_day
         self.is_start_day = is_start_day
-        self.init_holdings = init_holdings.copy(deep = True)
-        self.prev_day_holdings = pd.DataFrame()
-        self.adjusted_holdings = pd.DataFrame() # this data frame will hold the holdings adjusted for transactions
-        self.priced_df = pd.DataFrame() #this will hold our final valuation df
 
-        #transactions
-        self.is_trans_day = is_trans_day
-        self.transactions = transactions
-        #valuation
-        self.price_df = pd.DataFrame()
+        #dataframes
+        self.init_holdings = init_holdings.copy(deep = True)
+        self.transactions_df = transactions_df #df
+
+        self.prev_day_holdings_df = pd.DataFrame()
+        self.final_holdings_df = pd.DataFrame() # this data frame will hold the holdings adjusted for transactions
+        self.priced_df = pd.DataFrame() #this will hold our prices
+        self.merged_df = pd.DataFrame() #this will hold the final value df
         self.valuation = None
         
-        self._fetch_holdings() #fetches the holdings from the previous day
-        self.priceit()
+        self._generate_holdings() #fetches the holdings from the previous day
+        self._generate_pricing()
 
-
-
-
-    def _fetch_holdings(self):
-        ''' This funcition will fetch the previous days holdings or if init day fetch init holdings'''
-
+    def _generate_holdings(self):
+        ''' This functions purpose is to generate two dataframes. The first one will create the holdings of the previous day (or initial holdings) 
+            this data frame will then be adjusted in the case of TAA or SAA and we will end with the final holdings dataframe '''
+        
+        logging.info("We are generating the two holding data frames for this portfolio")
+        
         if self.is_start_day:
-            self.prev_day_holdings = self.init_holdings
+            ''' in the case of start day the previous day holdings will just be our initial holdings'''
+            logging.info("Today is start day")
+            self.prev_day_holdings_df = self.init_holdings
+            logging.info("Our previous day holdings (in this case init):")
+            logging.info(f"\n{self.prev_day_holdings_df}")           
         else:
-            self.prev_day_holdings = self.parent_instance_TS.IndividualDays_instances[self.prev_day_str].portfolio_instances[self.name].adjusted_holdings
-            self.yesterdays_units = self.parent_instance_TS.IndividualDays_instances[self.prev_day_str].portfolio_instances[self.name].shares
-            self.yesterdays_nav = self.parent_instance_TS.IndividualDays_instances[self.prev_day_str].portfolio_instances[self.name].nav
-            _day_to_query = self.prev_day_dt
+            '''in this case we are getting our TS instance and finding the final holdings for yesterday and those will be todays begining holdings'''
+            self.prev_day_holdings_df = self.parent_instance_TS.IndividualDays_instances[self.prev_day_str].portfolio_instances[self.name].final_holdings_df
+            self.final_holdings_df = self.prev_day_holdings_df #will get overwritten if there is a AA or TAA
+            logging.info("Our previous day holding df:")
+            logging.info(f"\n{self.prev_day_holdings_df}")
+
+        if self.is_SAA or self.is_TAA:
+            ''' If there is an asset allocation we must adjust our holdings and CASH to show that'''
+            working_prev_day_holdings_df = self.prev_day_holdings_df.copy(deep = True) #our previous day holdings
+            working_transactions_df = self.transactions_df.copy(deep = True) #The transactions for our portfolio
+            
             if self.is_SAA:
-                try:
-                    while np.isnan(self.yesterdays_nav): 
-                        '''incase there isnt a nav yesterday we need to find the latest nav'''
-                        print("STARTING WHILE LOOP")
-                        _day_to_query = _day_to_query - timedelta(1)
-                        _day_to_query_str = datetime.strftime(_day_to_query, '%Y-%m-%d')
-                        print(f"querying: {_day_to_query_str}")                
-                        returned_nav = self.parent_instance_TS.IndividualDays_instances[_day_to_query_str].portfolio_instances[self.name].nav                        
-                        print(f"retruned nav: {returned_nav}")
-                        self.yesterdays_nav = returned_nav
-                except Exception as e:
-                    print(e)
-                    exit
-               
-
-
-
-            self.shares = self.yesterdays_units
+                ''' Here we must only adjust cash'''
+                logging.info("Today is SAA day")
+                SAA_amount = (working_transactions_df.loc[(working_transactions_df["Ticker"] == "EUR") & (working_transactions_df["Date"] == self.val_day_str), "Quantity"]).sum()
+                logging.info(f"Our SAA amount is:{SAA_amount}")
+                working_prev_day_holdings_df.loc[working_prev_day_holdings_df["Ticker"] == "EUR", "Quantity"] = working_prev_day_holdings_df.loc[working_prev_day_holdings_df["Ticker"] == "EUR", "Quantity"] + SAA_amount
+                final_df = working_prev_day_holdings_df #will get overwritten if there is TAA for the TAA adjustments
+                logging.info(f"Our final data frame after SAA adjustments")
+                logging.info(f"\n{final_df}")
             
-
-
-    def _adjustholdings(self):
-        if self.is_trans_day:
-                ''' Adjustment made to holdings incase of transactions'''
-
-                working_df_trans = self.transactions.copy()
-                working_df_holdings = self.prev_day_holdings
-                working_df_trans["total"] = working_df_trans["Quantity"] * working_df_trans["Price"]  #takes care of affect on cash
-
+            if self.is_TAA:
+                '''Here we must adjust cash and holdings'''
+                logging.info("Today is TAA day")
+                logging.info(working_transactions_df)
+                TAA_moves_df = working_transactions_df[(working_transactions_df["Date"] == self.val_day_str) & (working_transactions_df["Ticker"] != "EUR")] #wont have the cash line
+                TAA_amount = (TAA_moves_df["Quantity"] * TAA_moves_df["Price"]).sum()
+                logging.info(f"Our TAA moves have a total cash impact of {TAA_amount}")
+                logging.info("Our TAA moves are:")
+                logging.info(f"\n{TAA_moves_df}")
                 
-                filtered = working_df_trans[(working_df_trans['Date'] == self.val_day_str) & (working_df_trans['Ticker'] != 'EUR')]
-                # Return the sum of the 'total' column or 0 if no relevant rows are found
-                delta = filtered['total'].sum() if not filtered.empty else 0
-
-
-            
-                for row in working_df_trans.itertuples():
-                # Check if the Ticker exists in the holdings DataFrame
-                    if row.Ticker in working_df_holdings['Ticker'].values:
-                        # If it exists, update the quantity
-                        working_df_holdings.loc[working_df_holdings["Ticker"] == row.Ticker, "Quantity"] += row.Quantity
-                    else:
-                        # If it doesn't exist, add a new row with the Ticker and Quantity
-                        new_row = {'Ticker': row.Ticker, 'Quantity': row.Quantity}
-                        working_df_holdings = working_df_holdings.append(new_row, ignore_index=True)
-        
-                #overwritting adjusting cash position  and holdings again
-                working_df_holdings.loc[working_df_holdings["Ticker"] == "EUR", "Quantity"] = float(working_df_holdings.loc[working_df_holdings["Ticker"] == "EUR", "Quantity"]) + float(-delta) #currently EUR cash is hardcoded in
+                result = pd.merge(working_prev_day_holdings_df, TAA_moves_df, on="Ticker", how="outer", suffixes=("_holdings", "_pending")) #if SAA then working prev day holdings already has the adjustment
+                result.fillna(0, inplace=True)
                 
-                return working_df_holdings
-
-        else:
-            #when no need to adjust cuz no transactions
-            self.adjusted_holdings = self.prev_day_holdings
-        
-    def _pricing_df(self):
-        '''Creates a df that gets priced and sectors'''
-        tickers_to_query = pd.concat([self.adjusted_holdings["Ticker"], self.transactions["Ticker"]]).drop_duplicates() #incase we buy stocks that are not in our initial holdings we must concat and drop duplicates
-        tickers_to_query_series = tickers_to_query[tickers_to_query != "EUR"].copy() #drops the CASH component
-        tickers_to_query = tickers_to_query_series.astype(str).str.cat(sep=" ") #makes it useable my yahoo finance
-        df = yf.download(tickers = tickers_to_query,
-                    start = self.val_day_str,
-                    progress = False)
-        df = df["Adj Close"]
-        df.index = df.index.strftime('%Y-%m-%d')
-        #query industry data
-        industries = dict()
-        for ticker in tickers_to_query_series.tolist():
-            ticker_object = yf.Ticker(ticker)
-            ind_sector = ticker_object.info.get("sector", "other")
-            industries[ticker] = ind_sector
-
-        # Create a DataFrame where each row is a ticker and sector
-        sector_df = pd.DataFrame(list(industries.items()), columns=["Ticker", "Sector"])
-    
-        return sector_df, df
+                logging.info(f"Our merged prev day holdings and pensing transactions are:")
+                logging.info(f"\n{result}")
+                
+                result["Quantity"] = result[["Quantity_holdings", "Quantity_pending"]].sum(axis=1, skipna=True) #adjust the holdings for transactions
+                final_df = result[["Ticker","Quantity"]]
+                final_df.loc[final_df["Ticker"] == "EUR", "Quantity"] = final_df.loc[final_df["Ticker"] == "EUR", "Quantity"] - TAA_amount
+                final_df = final_df.groupby('Ticker', as_index=False)['Quantity'].sum()
+                logging.info("Our TAA adjusted df is (SAA adjustments also taken into consideration):")
+                logging.info(f"\n{final_df}")
             
-    def priceit(self):
-        
-        '''This function will take a Dataframe with pricing and merge it to the holdings data frame. It will also calculate the valuation and do any share adjustment as well as strike NAV's.
-        The adjustments df has to be ran before hand or else there could be holdings that do not get priced '''
-        _false_valuation = False
-        working_sector_df, working_price_df = self._pricing_df()
-        working_holdings_df = self._adjustholdings()
-        
-        for row in working_holdings_df.itertuples():
-            if row.Ticker != "EUR": #we will never get a price for cash component
-                try:
-                    # Attempt to update the 'Price' column
-                    working_holdings_df.loc[working_holdings_df["Ticker"] == row.Ticker, "Price"] = working_price_df.loc[self.val_day_str, row.Ticker]
-                except KeyError:
-                    # Handle the case where the ticker or index is not found
-                    _false_valuation = True
-                    self.valuation = np.nan
-                    try:
-                        working_holdings_df.loc[working_holdings_df["Ticker"] == row.Ticker, "Price"] = np.nan 
-                    except:
-                        continue
-                    continue  # Continue to the next iteration
-        working_holdings_df.loc[working_holdings_df["Ticker"] == "EUR", "Price"] = 1
-        working_holdings_df["Total"] = working_holdings_df["Quantity"] * working_holdings_df["Price"] #ads the total column
-        
-        if _false_valuation:
-            self.valuation = np.nan
+            self.final_holdings_df = final_df
+            logging.info(f"Our final df after SAA and TAA adjustments:")
+            logging.info(f"\n{self.final_holdings_df}")
 
-        else:
-
+    def _generate_pricing(self):
+        '''This function generates two data frames a priced df and a merged df'''
+        Tickers_query = self.final_holdings_df["Ticker"].tolist() #takes the df we calculated in the previous step 
+        Tickers_query.remove("EUR")
+        results = {}
+        for ticker in Tickers_query:
             try:
-                _valuation = working_holdings_df["Total"].sum()
-                self.valuation = round(_valuation,4)
-                working_holdings_df["Weight"] = working_holdings_df["Total"] / self.valuation
+                price = yf.download(ticker,start = self.val_day_str, end = self.tomorrow_dt_str)
+                stock = yf.Ticker(ticker)
+                sector = stock.info.get('sector', 'N/A')
+                logging.info(f"Historical price:{price} , sector: {sector}")
             except:
-                self.valuation = np.nan 
-        merged_df = working_holdings_df.merge(working_sector_df, on="Ticker", how="left") #adding the sectors
-        merged_df.loc[merged_df["Ticker"] == "EUR", "Sector"] = "CASH" #manually putting the sector for cash
-        self.priced_df = working_holdings_df
-        
-        #after we value it we must adjust for our 
-        
-        if self.is_SAA and isinstance(self.valuation, float):
-            self.SAA_amount = self.transactions.loc[(self.transactions["Ticker"] == "EUR") & (self.transactions["Date"] == self.val_day_str), "Quantity"].sum()
-            print(f"SAA: {self.SAA_amount}")
-            print(f"yesterdays nav: {self.yesterdays_nav}")
-
-
-            num_shares_issue = self.SAA_amount / self.yesterdays_nav
-            print(f"Issuing {num_shares_issue}")
-            print(f"shares before:{self.shares})")
-            self.shares = self.shares + num_shares_issue
-            print(f"new num shares: {self.shares}")
-            working_holdings_df.loc[self.adjusted_holdings["Ticker"] == "EUR", "Quantity"] = float(working_holdings_df.loc[working_holdings_df["Ticker"] == "EUR", "Quantity"]) + float(self.SAA_amount) #adjust cash for SAA
-            #readjusting valuation 
-            _valuation = working_holdings_df["Total"].sum()
-            self.valuation = round(_valuation,4)
-            working_holdings_df["Weight"] = working_holdings_df["Total"] / self.valuation #adjusting the weights
-            self.priced_df = working_holdings_df #overwritting the final df
-            self.nav = self.valuation / self.shares
-
-        elif isinstance(self.valuation, float):
-            self.nav = self.valuation / self.shares
-
-        print(f"The priced DF for {self.val_day_str}: \n {self.priced_df}")
-        print(f"The NAV for {self.val_day_str}: \n {self.nav}")
-        print(f"The valuation for {self.val_day_str}: \n {self.valuation}")
-
-        print(f"The number of shares is {self.shares}")
-              
+                continue
 
 
     
@@ -355,9 +280,13 @@ def test_TimeFrame(user_input):
         print(f"{attr}: {value}")
 
 
-TS = TimeFrame('2024-01-01','2024-01-31')
+TS = TimeFrame('2024-01-01','2024-01-02')
 TS.genportfolio(df_holdings,df_trans, "EQTY")
 #TS.genportfolio(df_holdings,df_trans, "FRG EQTY")
 TS.gendays()
-TS.performance()
 
+logging.info("START")
+price = yf.download("MAP.MC",start = "2024-01-10", end= "2024-01-11")
+adj_close_value = price.loc["2024-01-10", 'Adj Close']
+logging.info(f"\n{adj_close_value}")
+logging.info("DONE")
